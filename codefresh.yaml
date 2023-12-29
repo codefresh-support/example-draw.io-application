@@ -1,0 +1,126 @@
+version: "1.0"
+
+stages:
+  - "clone"
+  - "precheck"
+  - "build"
+  - "test"
+  - "approve"
+  - "push"
+  - "deploy"
+  
+
+steps:
+  clone:
+    title: "Cloning repository"
+    type: "git-clone"
+    repo: "${{CF_REPO_OWNER}}/${{CF_REPO_NAME}}"
+    revision: "dev"
+    stage: "clone"
+    git: "github"
+  
+  prechecks:
+    type: parallel
+    stage: "precheck"
+    fail_fast: false
+    steps:
+        lint:
+          title: Lint
+          working_directory: "${{clone}}"
+          image: "fnichol/check-shell:latest"
+          fail_fast: false
+          commands:
+            - shfmt -i 2 -ci -bn -w main/docker-entrypoint.sh
+            
+        DockerfileAnalysis:
+          title: Docker lint
+          working_directory: "${{clone}}"
+          image: "fnichol/check-shell:latest"        
+          commands:
+            - hadolint -V --no-fail main/Dockerfile                 
+ 
+  build:
+    title: "Building Docker image"
+    type: "build"
+    image_name: "amankinenko/docker-drawio"          
+    working_directory: "${{clone}}/main"
+    tag: "latest"
+    dockerfile: "Dockerfile"
+    stage: "build"
+    disable_push: "true"
+
+    
+  test:  
+   image: cypress/included:9.7.0
+   title: "Running Cypress tests"
+   working_directory: "${{clone}}/cypress/test"
+   stage: test
+   commands:
+    - cypress run
+   services:
+    shared_host_network: true
+    composition:
+     drawio:
+      image: ${{build}}
+      ports:
+        - 8080
+        - 8443
+    readiness:
+            image: 'byrnedo/alpine-curl'
+            timeoutSeconds: 5
+            periodSeconds: 3
+            commands:
+              - "curl drawio:8080" 
+              
+              
+  approval:
+      type: pending-approval
+      description: Update?
+      title: Push and update the new image?
+      stage: "approve"
+      fail_fast: true
+      strict_fail_fast: true
+      arguments:
+        timeout:
+          duration: 1
+          finalState: denied
+          
+  push_image:
+      title: Push image to registry
+      type: push
+      stage: push
+      arguments:
+        candidate: ${{build}}
+        image_name: amankinenko/${{CF_REPO_NAME}}
+        registry: dockerhub
+        tags:
+          - latest
+          - ${{CF_SHORT_REVISION}}
+  
+  update_tag:
+      title: Updating Image Version
+      type: freestyle
+      stage: deploy
+      working_directory: "${{clone}}"
+      arguments:
+        image: mikefarah/yq:4
+        commands:
+          - yq -i e '.spec.source.helm.parameters[1].value = "${{CF_SHORT_REVISION}}"' argocd-apps/drawio.yaml
+          - cat argocd-apps/drawio.yaml
+
+  commit_changes:
+      title: Commiting new App Version
+      type: git-commit
+      stage: deploy
+      working_directory: "${{clone}}"
+      arguments:
+        repo: ${{CF_REPO_OWNER}}/${{CF_REPO_NAME}}
+        git: github
+        commit_message: Updating Image Version to ${{CF_SHORT_REVISION}}
+        git_user_email: ci-argo@codefresh.io
+        git_user_name: ci-bot
+        allow_empty: false
+        add:
+          - ./argocd-apps/drawio.yaml
+  
+  
