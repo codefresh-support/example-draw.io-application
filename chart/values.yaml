@@ -1,0 +1,28 @@
+replicaCount: 3
+
+image:
+  repository: docker.io/amankinenko/docker-drawio
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+nameOverride: ""
+fullnameOverride: ""
+
+namespace: drawio
+
+sessionAffinity:
+  enabled: true
+  timeoutSeconds: 3600
+
+
+environment:
+  PUBLIC_DNS: "domain"
+  ORGANISATION_UNIT: "unit"
+  ORGANISATION: "org"
+  CITY: "city"
+  STATE: "state-test"
+  COUNTRY_CODE: "country"

@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "drawio.name" . }}
+  labels:
+    app: {{ include "drawio.name" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: {{ include "drawio.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "drawio.name" . }}
+    spec:
+      containers:
+      - name: {{ include "drawio.name" . }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+  strategy:
+    canary:
+      steps:
+      - setWeight: 20
+      - pause: {}
+      - setWeight: 40
+      - pause: {duration: 40s}
+      - setWeight: 60
+      - pause: {duration: 20s}
